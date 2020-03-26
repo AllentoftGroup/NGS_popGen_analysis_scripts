@@ -1,0 +1,364 @@
+---
+title: "Variant calling Podarcis siculus"
+author: "Maria Novosolov"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: united
+    highlight: tango
+    code_folding: show
+    code_download: true
+    font: FiraCode
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir =  rprojroot::find_rstudio_root_file())
+lib_loc <-  "/science/willerslev/users-shared/science-snm-willerslev-rlw363/Rlibrary"
+# library(tidyverse)
+library(readr,lib.loc = lib_loc)
+library(snakecase,lib.loc = lib_loc)
+library(janitor,lib.loc = lib_loc)
+library(vcfR,lib.loc = lib_loc)
+library(ade4,lib.loc = lib_loc)
+library(adegenet,lib.loc = lib_loc)
+library(poppr,lib.loc = lib_loc)
+# library(ape,lib.loc = lib_loc)
+library(igraph,lib.loc = lib_loc)
+library(ggplot2,lib.loc = lib_loc)
+library(memuse,lib.loc = lib_loc)
+library(stringr,lib.loc = lib_loc)
+```
+
+## Population genetic analyses for GBS data {.tabset}
+
+Load the island data
+```{r message=FALSE, warning=TRUE}
+pop.data.ps <- read_csv("~/sharedhome/L.Dalen_19_09_sample_info.csv") %>% clean_names()
+head(pop.data.ps)
+pop.data.ps$island<- NA
+for(i in 1:length(pop.data.ps$island)){
+  pop.data.ps$island[i]<- str_sub(pop.data.ps$user_id[i],1,1)
+}
+```
+
+
+### All genome
+
+read the vcf data for the mitochondrial scaffold
+
+```{r eval=FALSE, include=FALSE}
+PS.VCF <- read.vcfR("~/sharedhome/all_vcf_merged_PS.vcf.gz")
+```
+
+Check the file
+
+```{r eval=FALSE, include=FALSE}
+PS.VCF
+```
+
+Update the names in the vcf file
+
+```{r eval=FALSE, include=FALSE}
+pop.data.ps$ID_name_all<- as.character(colnames(PS.VCF@gt)[-1])
+head(pop.data.ps)
+colnames(PS.VCF@gt)[-1]<- pop.data.ps$user_id
+head(colnames(PS.VCF@gt))
+```
+
+convert the data into genlight data
+
+```{r eval=FALSE, include=FALSE}
+gl.PS <- vcfR2genlight(PS.VCF)
+```
+
+set the ploidy of the data
+
+```{r eval=FALSE, include=FALSE}
+ploidy(gl.PS) <- 2
+```
+
+Add the population data to vcf
+
+```{r eval=FALSE, include=FALSE}
+pop(gl.PS) <- pop.data.ps$island
+```
+
+look at the data
+
+```{r eval=FALSE, include=FALSE}
+gl.PS
+```
+
+#### Distance three
+
+```{r eval=FALSE, include=FALSE}
+tree <- aboot(gl.PS, tree = "upgma", distance = bitwise.dist, sample = 100, showtree = F, cutoff = 50, quiet = T)
+#plot the tree
+cols.ps <- c("#E69F00", "#56B4E9")
+plot.phylo(tree, cex = 0.8, font = 2, adj = 0, tip.color =  cols.ps[pop(gl.PS)])
+nodelabels(tree$node.label, adj = c(1.3, -0.5), frame = "n", cex = 0.8,font = 3, xpd = TRUE)
+#legend(35,10,c("CA","OR","WA"),cols, border = FALSE, bty = "n")
+legend('topleft', legend = c("K","M"), fill = cols.ps, border = FALSE, bty = "n")
+axis(side = 1)
+title(xlab = "Genetic distance (proportion of loci that are different)")
+```
+
+#### Minimum spanning networks (MSN)
+
+run the distance function to get the distance matrix
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+PS.dist <- bitwise.dist(gl.PS)
+```
+
+calculate the MSN
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+PS.msn <- poppr.msn(gl.PS, PS.dist, showplot = FALSE, include.ties = T)
+node.size <- rep(2, times = nInd(gl.PS))
+names(node.size) <- indNames(gl.PS)
+vertex.attributes(PS.msn$graph)$size <- node.size
+```
+
+Plot the network
+
+```{r eval=FALSE, include=FALSE}
+set.seed(10)
+plot_poppr_msn(gl.PS, PS.msn , palette = cols.ps, gadj = 70)
+```
+
+#### Principal components analysis
+
+run a PCA with three components
+
+```{r eval=FALSE, include=FALSE}
+PS.pca <- glPca(gl.PS, nf = 3)
+```
+
+plot a barplot of eigenvalues
+
+```{r eval=FALSE, include=FALSE}
+barplot(100*PS.pca$eig/sum(PS.pca$eig), col = heat.colors(50), main="PCA Eigenvalues")
+#give it titles
+title(ylab="Percent of variance\nexplained", line = 2)
+title(xlab="Eigenvalues", line = 1)
+```
+
+create a data frame from the PCA scores
+```{r eval=FALSE, include=FALSE}
+PS.pca.scores <- as.data.frame(PS.pca$scores)
+PS.pca.scores$pop <- pop(gl.PS)
+```
+
+plot the PCA
+
+```{r eval=FALSE, include=FALSE}
+set.seed(10)
+ggplot(PS.pca.scores, aes(x=PC1, y=PC2, colour=pop)) +
+  geom_point(size=2)+
+  # stat_ellipse(level = 0.95, size = 1)+
+  scale_color_manual(values = cols.ps) +
+  geom_hline(yintercept = 0)+
+  geom_vline(xintercept = 0)+
+  theme_bw()
+```
+
+
+#### Discriminant analysis of principal components (DAPC)
+
+```{r eval=FALSE, include=FALSE}
+pnw.dapc.ps <- dapc(gl.PS, n.pca = 3, n.da = 2)
+scatter(pnw.dapc.ps, col = cols.ps, cex = 2, legend = TRUE, clabel = F, posi.leg = "bottomleft", scree.pca = TRUE,
+        posi.pca = "topleft", cleg = 0.75)
+```
+
+#### Plot the probability of the population
+Illustrates the probability of population membership on the y-axis. Each sample is a bin on the x-axis, and the assigned probability of population membership is shown as a stacked bar chart with clusters or populations shown in color.
+
+```{r eval=FALSE, include=FALSE}
+compoplot(pnw.dapc.ps,col = cols.ps, posi = 'top')
+```
+
+For better interpertation we will seperate the plot by population, in our case based on islands
+
+```{r eval=FALSE, include=FALSE}
+dapc.results.ps <- as.data.frame(pnw.dapc.ps$posterior)
+dapc.results.ps$pop <- pop(gl.PS)
+dapc.results.ps$indNames <- rownames(dapc.results.ps)
+
+dapc.results.ps <- reshape2::melt(dapc.results.ps)
+colnames(dapc.results.ps) <- c("Original_Pop","Sample","Assigned_Pop","Posterior_membership_probability")
+
+p <- ggplot(dapc.results.ps, aes(x=Sample, y=Posterior_membership_probability, fill=Assigned_Pop))
+p <- p + geom_bar(stat='identity') 
+p <- p + scale_fill_manual(values = cols.ps) 
+p <- p + facet_grid(~Original_Pop, scales = "free")
+p <- p + theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
+p
+```
+
+### Mitochondrial
+
+Load the island data
+```{r message=FALSE, warning=TRUE}
+pop.data.ps.mito <- read_csv("~/sharedhome/L.Dalen_19_09_sample_info_NCBI.csv") %>% clean_names()
+head(pop.data.ps.mito)
+pop.data.ps$island<- NA
+for(i in 1:length(pop.data.ps.mito$island)){
+  pop.data.ps.mito$island[i]<- str_sub(pop.data.ps.mito$user_id[i],1,1)
+}
+```
+read the vcf data for the mitochondrial scaffold
+```{r message=FALSE, warning=FALSE, include=FALSE}
+PS.VCF.mito <- read.vcfR("~/sharedhome/PS_variant_mito_NCBI_all.vcf.gz")
+```
+
+Check the file
+
+```{r message=FALSE, warning=FALSE}
+PS.VCF.mito
+```
+
+Update the names in the vcf file
+
+```{r message=FALSE, warning=FALSE}
+pop.data.ps$ID_name_mito<- as.character(colnames(PS.VCF.mito@gt)[-1])
+head(pop.data.ps.mito)
+colnames(PS.VCF.mito@gt)[-1]<- pop.data.ps.mito$user_id
+head(colnames(PS.VCF.mito@gt))
+```
+
+convert the data into genlight data
+
+```{r message=FALSE, warning=FALSE}
+gl.PS.mito <- vcfR2genlight(PS.VCF.mito)
+```
+
+set the ploidy of the data
+
+```{r}
+ploidy(gl.PS.mito) <- 2
+```
+
+Add the population data to vcf
+
+```{r}
+pop(gl.PS.mito) <- pop.data.ps.mito$island
+```
+
+look at the data
+
+```{r}
+gl.PS.mito
+```
+
+#### Distance three
+```{r fig.height=10, fig.width=14}
+tree.mito <- aboot(gl.PS.mito, tree = "upgma", distance = bitwise.dist, sample = 100, showtree = F, cutoff = 50, quiet = T)
+#plot the tree
+cols.ps.mito <- c("#E69F00","#56B4E9", "#3d8a21")
+plot.phylo(tree.mito, cex = 0.8, font = 2, adj = 0, tip.color =  cols.ps.mito[pop(gl.PS.mito)])
+nodelabels(tree.mito$node.label, adj = c(1.3, -0.5), frame = "n", cex = 0.8,font = 3, xpd = TRUE)
+#legend(35,10,c("CA","OR","WA"),cols, border = FALSE, bty = "n")
+legend('topleft', legend = c("K","M"), fill = cols.ps.mito, border = FALSE, bty = "n")
+axis(side = 1)
+title(xlab = "Genetic distance (proportion of loci that are different) based on mitoGenome")
+```
+
+#### Minimum spanning networks (MSN)
+
+run the distance function to get the distance matrix
+
+```{r}
+PS.dist.mito <- bitwise.dist(gl.PS.mito)
+```
+
+calculate the MSN
+
+```{r}
+PS.msn.mito <- poppr.msn(gl.PS.mito, PS.dist.mito, showplot = FALSE, include.ties = T)
+node.size.mito <- rep(2, times = nInd(gl.PS.mito))
+names(node.size.mito) <- indNames(gl.PS.mito)
+#vertex.attributes(PS.msn.mito$graph)$size <- node.size.mito
+```
+
+Plot the network
+
+```{r fig.height=10, fig.width=14}
+set.seed(9)
+plot_poppr_msn(gl.PS.mito, PS.msn.mito , palette = cols.ps.mito, gadj = 70)
+```
+
+#### rincipal components analysis (PCA)
+
+run a PCA with three components
+```{r}
+PS.pca.mito <- glPca(gl.PS.mito, nf = 3)
+```
+
+plot a barplot of eigenvalues
+
+```{r fig.height=10, fig.width=14}
+barplot(100*PS.pca.mito$eig/sum(PS.pca.mito$eig), col = heat.colors(50), main="PCA Eigenvalues")
+#give it titles
+title(ylab="Percent of variance\nexplained", line = 2)
+title(xlab="Eigenvalues", line = 1)
+```
+
+create a data frame from the PCA scores
+
+```{r}
+PS.pca.scores.mito <- as.data.frame(PS.pca.mito$scores)
+PS.pca.scores.mito$pop <- pop(gl.PS.mito)
+```
+
+plot the PCA
+
+```{r fig.height=10, fig.width=14}
+set.seed(9)
+ggplot(PS.pca.scores.mito, aes(x=PC1, y=PC2, colour=pop)) +
+  geom_point(size=2)+
+  stat_ellipse(level = 0.95, size = 1)+
+  scale_color_manual(values = cols.ps.mito) +
+  geom_hline(yintercept = 0)+
+  geom_vline(xintercept = 0)+
+  theme_bw()
+```
+
+#### Discriminant analysis of principal components (DAPC) 
+
+```{r fig.height=10, fig.width=14}
+pnw.dapc.ps.mito <- dapc(gl.PS.mito, n.pca = 3, n.da = 2)
+scatter(pnw.dapc.ps.mito, col = cols.ps.mito, cex = 2, legend = TRUE, clabel = F, posi.leg = "bottomleft", scree.pca = TRUE,
+        posi.pca = "topleft", cleg = 0.75)
+```
+
+#### Plot the probability of the population
+Illustrates the probability of population membership on the y-axis. Each sample is a bin on the x-axis, and the assigned probability of population membership is shown as a stacked bar chart with clusters or populations shown in color.
+
+
+```{r fig.height=10, fig.width=14}
+compoplot(pnw.dapc.ps.mito,col = cols.ps.mito, posi = 'top',show.lab=T)
+```
+
+For better interpertation we will seperate the plot by population, in our case based on islands
+
+```{r fig.height=10, fig.width=14}
+dapc.results.ps.mito <- as.data.frame(pnw.dapc.ps.mito$posterior)
+dapc.results.ps.mito$pop <- pop(gl.PS.mito)
+dapc.results.ps.mito$indNames <- rownames(dapc.results.ps.mito)
+dapc.results.ps.mito <- reshape2::melt(dapc.results.ps.mito)
+colnames(dapc.results.ps.mito) <- c("Original_Pop","Sample","Assigned_Pop","Posterior_membership_probability")
+p <- ggplot(dapc.results.ps.mito, aes(x=Sample, y=Posterior_membership_probability, fill=Assigned_Pop))
+p <- p + geom_bar(stat='identity') 
+p <- p + scale_fill_manual(values = cols.ps.mito) 
+p <- p + facet_grid(~Original_Pop, scales = "free")
+p <- p + theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
+p
+```
+
+
