@@ -3,7 +3,7 @@
 #the folder of where the .bam files are
 IN=mapping_temp
 #The folder that will be used for saving all the output files to
-OUT=picard
+OUT=picard_temp
 #garbage directory for all the tempfiles of MarkDuplicates
 JUNK=picard_MD_junk
 #the optical distance used for reads to be considered optical duplicates. Optical duplicates are reads that fell on the same tile during the sequencing process?
